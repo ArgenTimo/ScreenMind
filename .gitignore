@@ -1,9 +1,22 @@
-.venv/
-.env
+# Python
 __pycache__/
 *.pyc
-logs/*.log
-images/*.png
-responces/*.txt
-responces/*.json
+*.pyo
+*.pyd
+.venv/
 .idea/
+
+# Environment
+.env
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Images (optional — можно хранить или нет)
+images/*
+!images/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
