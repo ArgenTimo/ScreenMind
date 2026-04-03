@@ -1,13 +1,1 @@
-Analyze the screenshot carefully.
-
-If there is a math problem on the screen:
-1. Extract the exact problem.
-2. Solve it.
-3. Explain the solution step by step.
-
-If there is no math problem:
-1. Briefly describe what is visible.
-2. Extract any important text.
-3. Explain whether there is something that needs attention.
-
-Be precise. Do not invent details that are not visible.
+Analyze the image. Find the problem or question in it. Give me the shortest possible answer to the problem or question. In Russia

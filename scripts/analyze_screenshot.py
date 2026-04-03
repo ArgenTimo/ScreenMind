@@ -7,6 +7,9 @@ from datetime import datetime
 
 from openai import OpenAI
 
+from common.config import load_config
+from common.logger import setup_logger
+
 
 def read_text_file(file_path: str) -> str:
     with open(file_path, "r", encoding="utf-8") as file:
@@ -29,11 +32,10 @@ def ensure_directory(directory_path: str) -> None:
     os.makedirs(directory_path, exist_ok=True)
 
 
-def save_text_response(response_dir: str, image_path: str, prompt_text: str, model_name: str, output_text: str) -> str:
+def save_response_files(response_dir: str, image_path: str, prompt_text: str, model_name: str, output_text: str) -> str:
     ensure_directory(response_dir)
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    image_name = os.path.basename(image_path)
     txt_path = os.path.join(response_dir, f"response_{timestamp}.txt")
     json_path = os.path.join(response_dir, f"response_{timestamp}.json")
 
@@ -44,7 +46,6 @@ def save_text_response(response_dir: str, image_path: str, prompt_text: str, mod
         "timestamp": timestamp,
         "model": model_name,
         "image_path": image_path,
-        "image_name": image_name,
         "prompt": prompt_text,
         "response_text": output_text,
     }
@@ -55,25 +56,41 @@ def save_text_response(response_dir: str, image_path: str, prompt_text: str, mod
     return txt_path
 
 
-def analyze_image(image_path: str, prompt_path: str, response_dir: str) -> str:
+def analyze_image(image_path: str, prompt_path: str, response_subfolder: str) -> str:
+    config = load_config()
+    logs_dir = os.path.join(config.project_dir, config.default_log_dir)
+    logger = setup_logger(logs_dir=logs_dir, logger_name="screen_tool.analyze", level=config.log_level)
+
+    logger.info("Starting screenshot analysis")
+    logger.info("Image path: %s", image_path)
+    logger.info("Prompt path: %s", prompt_path)
+    logger.info("Response subfolder: %s", response_subfolder)
+
     if not os.path.isfile(image_path):
+        logger.error("Image file not found: %s", image_path)
         raise FileNotFoundError(f"Image file not found: {image_path}")
 
     if not os.path.isfile(prompt_path):
+        logger.error("Prompt file not found: %s", prompt_path)
         raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set in the environment")
+    if not config.openai_api_key:
+        logger.error("OPENAI_API_KEY is missing in .env")
+        raise RuntimeError("OPENAI_API_KEY is not set in .env")
 
     prompt_text = read_text_file(prompt_path)
     base64_image = encode_file_base64(image_path)
     mime_type = detect_mime_type(image_path)
-    model_name = "gpt-4.1-mini"
+    response_dir = os.path.join(config.project_dir, response_subfolder)
 
-    client = OpenAI()
+    logger.info("Loaded prompt successfully")
+    logger.info("Detected mime type: %s", mime_type)
+    logger.info("Using model: %s", config.openai_model)
+
+    client = OpenAI(api_key=config.openai_api_key)
 
     response = client.responses.create(
-        model=model_name,
+        model=config.openai_model,
         input=[
             {
                 "role": "user",
@@ -92,34 +109,35 @@ def analyze_image(image_path: str, prompt_path: str, response_dir: str) -> str:
     )
 
     output_text = response.output_text.strip()
-
     if not output_text:
         output_text = "Model returned an empty text response."
 
-    saved_txt_path = save_text_response(
+    logger.info("Received response from model")
+    logger.info("Response length: %s characters", len(output_text))
+
+    saved_txt_path = save_response_files(
         response_dir=response_dir,
         image_path=image_path,
         prompt_text=prompt_text,
-        model_name=model_name,
+        model_name=config.openai_model,
         output_text=output_text,
     )
 
+    logger.info("Saved response text to: %s", saved_txt_path)
     return saved_txt_path
 
 
-def main() -> None:
+if __name__ == "__main__":
+    config = load_config()
+
     if len(sys.argv) != 4:
         raise SystemExit(
-            "Usage: python analyze_screenshot.py <image_path> <prompt_path> <response_dir>"
+            "Usage: python analyze_screenshot.py <image_path> <prompt_path> <response_subfolder>"
         )
 
     image_path = sys.argv[1]
     prompt_path = sys.argv[2]
-    response_dir = sys.argv[3]
+    response_subfolder = sys.argv[3]
 
-    saved_path = analyze_image(image_path=image_path, prompt_path=prompt_path, response_dir=response_dir)
+    saved_path = analyze_image(image_path, prompt_path, response_subfolder)
     print(saved_path)
-
-
-if __name__ == "__main__":
-    main()
