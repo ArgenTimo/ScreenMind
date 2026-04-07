@@ -38,29 +38,33 @@ def solve_qa_task(extract_result: ExtractResult, classify_result: ClassifyResult
     client = OpenAI(api_key=config.openai_api_key)
 
     prompt = f"""
-Solve the task using only the visible extracted content.
+You are solving a task extracted from a screen.
 
-Return JSON with exactly these fields:
+Return JSON with:
 {{
-  "final_answer": "final answer only",
-  "answer_type": "text | number | boolean | short_code",
+  "final_answer": "string",
+  "answer_type": "text | short | explanation",
   "confidence": 0.0,
-  "notes": "short note"
+  "notes": "optional"
 }}
 
 Rules:
-- Use only visible content.
-- Do not invent hidden conditions.
-- If the condition is incomplete, say that in final_answer.
-- Keep final_answer minimal.
-- confidence must be from 0 to 1.
-- Output JSON only.
+- Answer strictly in this language: {config.output_language}
+- Be precise and concise.
+- Do not hallucinate missing context.
+- Use task_relevant_code and task_relevant_text as primary sources.
 
-When task_type is code_bug_explanation:
-- identify the main bug or flaw
-- explain only the relevant issue
-- suggest the minimal correct fix
-- do not discuss style unless style is the bug
+Special handling:
+- If task_type is code_bug_explanation:
+  - Identify the main bug
+  - Explain it briefly
+  - Suggest minimal fix
+- If task_type is code_review:
+  - Point out the main issue only
+- If task_type is short_question:
+  - Return minimal direct answer
+
+Output JSON only.
 
 Extracted data:
 {extract_result.model_dump_json(indent=2)}
@@ -82,6 +86,6 @@ Classification:
     payload = json.loads(_extract_json_text(response_text))
     result = QASolverResult.model_validate(payload)
 
-    logger.info("QA solver finished: answer_type=%s confidence=%s", result.answer_type, result.confidence)
+    logger.info("QA solver finished")
 
     return result
