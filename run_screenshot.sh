@@ -3,6 +3,8 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_DIR"
+
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 SCREENSHOT_SCRIPT="$PROJECT_DIR/scripts/take_screenshot.py"
 ANALYZE_SCRIPT="$PROJECT_DIR/scripts/analyze_screenshot.py"
@@ -36,7 +38,7 @@ touch "$LOG_FILE"
   "$VENV_PYTHON" "$TELEGRAM_SCRIPT" text $'[Screen analysis]\n\n'"$MESSAGE_TEXT"
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Telegram text sent"
 
-  SEND_IMAGE_FLAG="$("$VENV_PYTHON" -c 'from scripts.common.config import load_config; print("true" if load_config().telegram_send_image else "false")')"
+  SEND_IMAGE_FLAG="$(grep '^TELEGRAM_SEND_IMAGE=' "$PROJECT_DIR/.env" | cut -d= -f2- | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] SEND_IMAGE_FLAG=$SEND_IMAGE_FLAG"
 
   if [ "$SEND_IMAGE_FLAG" = "true" ]; then
