@@ -340,3 +340,58 @@ images/*
 .DS_Store
 Thumbs.db
 ````
+
+# ScreenMind
+
+ScreenMind is a local AI utility that lets you press a hotkey, capture your screen, solve what is visible, and receive the answer in Telegram.
+
+It is designed for short tasks visible on screen:
+- code output questions
+- coding tasks
+- logic questions
+- short quiz-style prompts
+- math questions
+
+The project runs on demand only:
+- no long-running bot process
+- no background web server
+- no Docker required for normal use
+
+## How it works
+
+1. A hotkey triggers `run_screenshot.sh`
+2. A screenshot is saved locally
+3. The image is analyzed through a multi-step pipeline:
+   - extract visible information
+   - classify the task
+   - route to solver
+   - execute Python code when needed
+   - format final answer
+4. The final answer is sent to Telegram
+5. The process exits
+
+## Features
+
+- Global hotkey screenshot capture
+- Telegram delivery
+- Automatic Telegram `chat_id` discovery on first run
+- Multi-step task pipeline
+- Python code execution for output-based code questions
+- Structured logs
+
+## Requirements
+
+- Linux
+- Python 3.10+
+- Telegram account
+- OpenAI API key
+- Telegram bot token
+- `sxhkd` for global hotkeys
+
+## Installation
+
+### 1. Clone repository
+
+```bash
+git clone https://github.com/your-account/screenmind.git
+cd screenmind
