@@ -15,6 +15,7 @@ class AppConfig:
     telegram_bot_token: str
     telegram_chat_id: str
     telegram_send_image: bool
+    output_language: str
 
 
 def _to_bool(value: str) -> bool:
@@ -37,4 +38,5 @@ def load_config() -> AppConfig:
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         telegram_send_image=_to_bool(os.getenv("TELEGRAM_SEND_IMAGE", "true")),
+        output_language=os.getenv("OUTPUT_LANGUAGE", "en").strip(),
     )

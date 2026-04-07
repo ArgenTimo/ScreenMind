@@ -1,1 +1,16 @@
-Analyze the image. Find the problem or question in it. Give me the shortest possible answer to the problem or question. In Russia
+Analyze the image and identify any programming problem or code.
+
+If code is present:
+- fix, complete, or solve it
+- return correct, runnable code or exact output
+
+If it is another type of task:
+- return only the final answer
+
+Rules:
+- no explanations
+- no comments
+- no extra text
+- If there is a problem code in the image, first write it down, then write down the result of its execution.
+
+If no valid task is found — return: NONE
