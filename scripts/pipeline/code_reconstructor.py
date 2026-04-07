@@ -38,7 +38,7 @@ def reconstruct_code(extract_result: ExtractResult, classify_result: ClassifyRes
     client = OpenAI(api_key=config.openai_api_key)
 
     prompt = f"""
-You are reconstructing or solving a coding task from visible screen data.
+You are reconstructing or solving a coding task from screen data.
 
 Return JSON with exactly these fields:
 {{
@@ -49,6 +49,8 @@ Return JSON with exactly these fields:
 }}
 
 Rules:
+- Prefer task_relevant_code over all other text.
+- Ignore irrelevant_ui_text completely.
 - If task_type is code_output, reconstruct the exact visible code and preserve indentation.
 - If task_type is code_fix or code_write, return correct runnable code that solves the visible task.
 - Do not add markdown fences.

@@ -40,7 +40,7 @@ def classify_task(extract_result: ExtractResult) -> ClassifyResult:
     prompt = f"""
 You are a task classifier.
 
-Given extracted screen data, classify the task.
+Classify the actual task, ignoring unrelated interface noise.
 
 Return JSON with exactly these fields:
 {{
@@ -48,16 +48,19 @@ Return JSON with exactly these fields:
   "programming_language": "python or javascript or null",
   "requires_execution": true,
   "requires_reasoning": false,
-  "is_condition_complete": true,
+  "task_relevant_content_complete": true,
+  "non_task_ui_is_cut_off": false,
   "confidence": 0.0
 }}
 
 Rules:
-- Use code_output when the visible code mainly needs its exact output/result.
+- Focus on task_relevant_text and task_relevant_code, not on interface noise.
+- If code is fully visible and enough to determine output, task_relevant_content_complete=true even if unrelated screen text is cut off.
+- Use code_output when the task is to determine the exact output/result of visible code.
 - Use code_fix when broken code must be corrected.
 - Use code_write when a coding task requires returning code.
 - Use math, logic, quiz, short_question for non-code tasks.
-- Mark is_condition_complete=false if the visible condition appears cut off or incomplete.
+- non_task_ui_is_cut_off=true only if unrelated UI text is cut off.
 - confidence must be from 0 to 1.
 - Output JSON only.
 
@@ -79,11 +82,12 @@ Extracted data:
     result = ClassifyResult.model_validate(payload)
 
     logger.info(
-        "Classifier finished: task_type=%s, language=%s, requires_execution=%s, complete=%s",
+        "Classifier finished: task_type=%s, language=%s, requires_execution=%s, relevant_complete=%s, ui_cut_off=%s",
         result.task_type,
         result.programming_language,
         result.requires_execution,
-        result.is_condition_complete,
+        result.task_relevant_content_complete,
+        result.non_task_ui_is_cut_off,
     )
 
     return result

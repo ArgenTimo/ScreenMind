@@ -17,6 +17,15 @@ def build_incomplete_condition_answer(classify_result: ClassifyResult, extract_r
     logs_dir = os.path.join(config.project_dir, config.default_log_dir)
     logger = setup_logger(logs_dir=logs_dir, logger_name="screen_tool.pipeline.validator", level=config.log_level)
 
+    if extract_result.task_relevant_code.strip() and extract_result.code_appears_complete:
+        logger.info("Validator ignored incomplete UI because task-relevant code is complete")
+        return FinalAnswer(
+            answer="Internal routing error: code path should have continued.",
+            answer_kind="internal_error",
+            confidence=min(classify_result.confidence, extract_result.confidence),
+            source="validator",
+        )
+
     message = "Condition appears incomplete."
     if extract_result.missing_or_cut_off_parts:
         message = f"Condition appears incomplete: {'; '.join(extract_result.missing_or_cut_off_parts)}"

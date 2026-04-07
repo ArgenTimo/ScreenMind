@@ -57,24 +57,30 @@ def run_extractor(image_path: str) -> ExtractResult:
     base64_image = _encode_file_base64(image_path)
 
     prompt = """
-Extract all visible information from the image.
+Extract all visible information from the image and separate task-relevant content from interface noise.
 
 Return JSON with exactly these fields:
 {
   "raw_text": "all visible text",
-  "visible_code": "only visible code, preserve indentation exactly",
+  "visible_code": "all visible code if any",
+  "task_relevant_text": "only the visible text that is relevant to the actual task or question",
+  "task_relevant_code": "only the visible code relevant to the task, preserve indentation exactly",
+  "irrelevant_ui_text": ["text that belongs to interface, menus, chat chrome, notebook chrome, headers, tabs, status bars, etc."],
   "ui_hints": ["short ui hints"],
   "language_guess": "python or javascript or null",
   "confidence": 0.0,
-  "missing_or_cut_off_parts": ["describe anything cut off or missing"]
+  "missing_or_cut_off_parts": ["describe cut off or missing areas"],
+  "code_appears_complete": true,
+  "task_text_appears_complete": true
 }
 
 Rules:
 - Extract only what is visible.
 - Do not solve the task.
-- Do not infer hidden text.
-- If no code is visible, set visible_code to an empty string.
-- confidence must be a number from 0 to 1.
+- Separate interface noise from task-relevant content.
+- If code is clearly visible and self-contained, set code_appears_complete=true even if unrelated UI text is cut off.
+- If task-relevant text is enough to solve the task, set task_text_appears_complete=true.
+- confidence must be from 0 to 1.
 - Output JSON only.
 """.strip()
 
@@ -106,10 +112,12 @@ Rules:
     result = ExtractResult.model_validate(payload)
 
     logger.info(
-        "Extractor finished: confidence=%s, language_guess=%s, visible_code_len=%s",
+        "Extractor finished: confidence=%s, language_guess=%s, task_code_len=%s, code_complete=%s, text_complete=%s",
         result.confidence,
         result.language_guess,
-        len(result.visible_code),
+        len(result.task_relevant_code),
+        result.code_appears_complete,
+        result.task_text_appears_complete,
     )
 
     return result

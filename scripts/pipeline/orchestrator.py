@@ -26,14 +26,17 @@ def run_pipeline(image_path: str) -> FinalAnswer:
     extract_result = run_extractor(image_path)
     classify_result = classify_task(extract_result)
 
-    if not classify_result.is_condition_complete:
-        logger.info("Pipeline stopped: incomplete condition")
+    has_complete_code = bool(extract_result.task_relevant_code.strip()) and extract_result.code_appears_complete
+    code_like_task = classify_result.task_type in {"code_output", "code_fix", "code_write"}
+
+    if not classify_result.task_relevant_content_complete and not (code_like_task and has_complete_code):
+        logger.info("Pipeline stopped: task-relevant content incomplete")
         return build_incomplete_condition_answer(classify_result, extract_result)
 
-    if classify_result.task_type in {"code_output", "code_fix", "code_write"}:
+    if code_like_task:
         code_result = reconstruct_code(extract_result, classify_result)
 
-        language = (code_result.language or classify_result.programming_language or "").strip().lower()
+        language = (code_result.language or classify_result.programming_language or extract_result.language_guess or "").strip().lower()
 
         if classify_result.requires_execution and language == "python":
             execution_result = run_python_code(code_result.code)
