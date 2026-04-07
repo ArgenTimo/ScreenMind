@@ -24,6 +24,7 @@ class ClassifyResult(BaseModel):
     requires_reasoning: bool = False
     task_relevant_content_complete: bool = True
     non_task_ui_is_cut_off: bool = False
+    is_condition_complete: bool = True
     confidence: float = 0.0
 
 

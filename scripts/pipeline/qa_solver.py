@@ -56,6 +56,12 @@ Rules:
 - confidence must be from 0 to 1.
 - Output JSON only.
 
+When task_type is code_bug_explanation:
+- identify the main bug or flaw
+- explain only the relevant issue
+- suggest the minimal correct fix
+- do not discuss style unless style is the bug
+
 Extracted data:
 {extract_result.model_dump_json(indent=2)}
 

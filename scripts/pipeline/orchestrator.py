@@ -48,6 +48,11 @@ def run_pipeline(image_path: str) -> FinalAnswer:
         logger.info("Pipeline finished through code without execution path")
         return final_answer
 
+    if classify_result.task_type in {"code_bug_explanation", "code_review"}:
+        qa_result = solve_qa_task(extract_result, classify_result)
+        final_answer = validate_qa_answer(qa_result, classify_result)
+        return final_answer
+
     qa_result = solve_qa_task(extract_result, classify_result)
     final_answer = validate_qa_answer(qa_result, classify_result)
     logger.info("Pipeline finished through QA path")

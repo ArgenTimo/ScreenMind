@@ -17,15 +17,6 @@ def build_incomplete_condition_answer(classify_result: ClassifyResult, extract_r
     logs_dir = os.path.join(config.project_dir, config.default_log_dir)
     logger = setup_logger(logs_dir=logs_dir, logger_name="screen_tool.pipeline.validator", level=config.log_level)
 
-    if extract_result.task_relevant_code.strip() and extract_result.code_appears_complete:
-        logger.info("Validator ignored incomplete UI because task-relevant code is complete")
-        return FinalAnswer(
-            answer="Internal routing error: code path should have continued.",
-            answer_kind="internal_error",
-            confidence=min(classify_result.confidence, extract_result.confidence),
-            source="validator",
-        )
-
     message = "Condition appears incomplete."
     if extract_result.missing_or_cut_off_parts:
         message = f"Condition appears incomplete: {'; '.join(extract_result.missing_or_cut_off_parts)}"
@@ -49,11 +40,16 @@ def validate_qa_answer(qa_result: QASolverResult, classify_result: ClassifyResul
     if not answer:
         answer = "Could not determine the answer reliably."
 
+    answer_kind = qa_result.answer_type.strip() if qa_result.answer_type.strip() else "text"
+
+    if classify_result.task_type in {"code_bug_explanation", "code_review"}:
+        answer_kind = "text"
+
     logger.info("Validator accepted QA answer")
 
     return FinalAnswer(
         answer=answer,
-        answer_kind=qa_result.answer_type,
+        answer_kind=answer_kind,
         confidence=min(qa_result.confidence, classify_result.confidence),
         source="qa_solver",
     )

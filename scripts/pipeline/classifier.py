@@ -40,27 +40,29 @@ def classify_task(extract_result: ExtractResult) -> ClassifyResult:
     prompt = f"""
 You are a task classifier.
 
-Classify the actual task, ignoring unrelated interface noise.
+Given extracted screen data, classify the actual task shown on screen.
 
 Return JSON with exactly these fields:
 {{
-  "task_type": "code_output | code_fix | code_write | math | logic | quiz | short_question | unknown",
+  "task_type": "code_output | code_fix | code_write | code_review | code_bug_explanation | math | logic | quiz | short_question | unknown",
   "programming_language": "python or javascript or null",
   "requires_execution": true,
   "requires_reasoning": false,
-  "task_relevant_content_complete": true,
-  "non_task_ui_is_cut_off": false,
+  "is_condition_complete": true,
   "confidence": 0.0
 }}
 
 Rules:
-- Focus on task_relevant_text and task_relevant_code, not on interface noise.
-- If code is fully visible and enough to determine output, task_relevant_content_complete=true even if unrelated screen text is cut off.
-- Use code_output when the task is to determine the exact output/result of visible code.
-- Use code_fix when broken code must be corrected.
-- Use code_write when a coding task requires returning code.
+- Focus on task_relevant_text and task_relevant_code first.
+- Use code_output when task-relevant code mainly needs its exact output/result.
+- Use code_fix when visible code must be corrected.
+- Use code_write when the task asks to produce code.
+- Use code_bug_explanation when visible code is shown together with prompts like:
+  "what is wrong", "find the bug", "что тут не так", "что не так", "найди ошибку", "why is this wrong".
+- Use code_review when the task asks to assess, review, or critique code quality/design.
 - Use math, logic, quiz, short_question for non-code tasks.
-- non_task_ui_is_cut_off=true only if unrelated UI text is cut off.
+- If some unrelated UI text is cut off but the actual task-relevant content is fully visible, set is_condition_complete=true.
+- Set is_condition_complete=false only when the task-relevant content itself appears incomplete.
 - confidence must be from 0 to 1.
 - Output JSON only.
 
@@ -82,12 +84,12 @@ Extracted data:
     result = ClassifyResult.model_validate(payload)
 
     logger.info(
-        "Classifier finished: task_type=%s, language=%s, requires_execution=%s, relevant_complete=%s, ui_cut_off=%s",
+        "Classifier finished: task_type=%s, language=%s, requires_execution=%s, requires_reasoning=%s, complete=%s",
         result.task_type,
         result.programming_language,
         result.requires_execution,
-        result.task_relevant_content_complete,
-        result.non_task_ui_is_cut_off,
+        result.requires_reasoning,
+        result.is_condition_complete,
     )
 
     return result

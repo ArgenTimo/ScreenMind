@@ -57,19 +57,18 @@ def run_extractor(image_path: str) -> ExtractResult:
     base64_image = _encode_file_base64(image_path)
 
     prompt = """
-Extract all visible information from the image and separate task-relevant content from interface noise.
+Extract all visible information from the image and separate task-relevant content from surrounding UI noise.
 
 Return JSON with exactly these fields:
 {
   "raw_text": "all visible text",
-  "visible_code": "all visible code if any",
-  "task_relevant_text": "only the visible text that is relevant to the actual task or question",
-  "task_relevant_code": "only the visible code relevant to the task, preserve indentation exactly",
-  "irrelevant_ui_text": ["text that belongs to interface, menus, chat chrome, notebook chrome, headers, tabs, status bars, etc."],
+  "visible_code": "all visible code, preserve indentation exactly",
+  "task_relevant_text": "only the text directly relevant to the task/question",
+  "task_relevant_code": "only the code directly relevant to the task",
   "ui_hints": ["short ui hints"],
   "language_guess": "python or javascript or null",
   "confidence": 0.0,
-  "missing_or_cut_off_parts": ["describe cut off or missing areas"],
+  "missing_or_cut_off_parts": ["describe anything cut off or missing"],
   "code_appears_complete": true,
   "task_text_appears_complete": true
 }
@@ -77,10 +76,13 @@ Return JSON with exactly these fields:
 Rules:
 - Extract only what is visible.
 - Do not solve the task.
-- Separate interface noise from task-relevant content.
-- If code is clearly visible and self-contained, set code_appears_complete=true even if unrelated UI text is cut off.
-- If task-relevant text is enough to solve the task, set task_text_appears_complete=true.
-- confidence must be from 0 to 1.
+- Do not infer hidden text.
+- Preserve code indentation exactly.
+- If no code is visible, set visible_code and task_relevant_code to empty strings.
+- If no clear task text is visible, set task_relevant_text to an empty string.
+- code_appears_complete=true only if the task-relevant code is visible as a complete usable fragment.
+- task_text_appears_complete=true only if the task-relevant text is fully visible enough to understand the task.
+- confidence must be a number from 0 to 1.
 - Output JSON only.
 """.strip()
 
@@ -112,9 +114,10 @@ Rules:
     result = ExtractResult.model_validate(payload)
 
     logger.info(
-        "Extractor finished: confidence=%s, language_guess=%s, task_code_len=%s, code_complete=%s, text_complete=%s",
+        "Extractor finished: confidence=%s, language_guess=%s, visible_code_len=%s, task_relevant_code_len=%s, code_appears_complete=%s, task_text_appears_complete=%s",
         result.confidence,
         result.language_guess,
+        len(result.visible_code),
         len(result.task_relevant_code),
         result.code_appears_complete,
         result.task_text_appears_complete,
