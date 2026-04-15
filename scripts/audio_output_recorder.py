@@ -8,9 +8,23 @@ from pathlib import Path
 
 from pynput import keyboard
 
+from analyze_screenshot import send_session_to_telegram
 from common.config import load_config
 from common.logger import setup_logger
+from send_telegram import send_message
 from take_screenshot import take_screenshot
+
+
+def _cleanup_capture_folder(folder: Path, logger) -> int:
+    removed = 0
+    if not folder.is_dir():
+        return 0
+    for entry in folder.iterdir():
+        if entry.is_file() and entry.name != ".gitkeep":
+            logger.info("Startup cleanup removing: %s", entry)
+            entry.unlink()
+            removed += 1
+    return removed
 
 
 class OutputAudioRecorder:
@@ -19,6 +33,8 @@ class OutputAudioRecorder:
         self.project_dir = Path(self.config.project_dir)
         self.output_dir = self.project_dir / "audio_captures"
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.images_dir = self.project_dir / self.config.default_image_dir
+        self.images_dir.mkdir(parents=True, exist_ok=True)
 
         logs_dir = self.project_dir / self.config.default_log_dir
         self.logger = setup_logger(
@@ -26,6 +42,12 @@ class OutputAudioRecorder:
             logger_name="screen_tool.audio_output_recorder",
             level=self.config.log_level,
         )
+        self.logger.info(
+            "Service config: DEBUG_TELEGRAM=%s DEFAULT_IMAGE_DIR=%s",
+            self.config.debug_telegram,
+            self.config.default_image_dir,
+        )
+        self.logger.info("Unified activity log: %s", logs_dir / "service.log")
 
         self.process: subprocess.Popen | None = None
         self.lock = threading.Lock()
@@ -33,8 +55,21 @@ class OutputAudioRecorder:
         self.current_file: Path | None = None
         self.record_hotkey = keyboard.Key.f8
         self.screenshot_hotkey = keyboard.Key.f9
+        self.batch_hotkey = keyboard.Key.f2
         self._last_f9_screenshot = 0.0
         self._f9_debounce_seconds = 0.5
+        self._batch_lock = threading.Lock()
+        self._batch_running = False
+
+        n_img = _cleanup_capture_folder(self.images_dir, self.logger)
+        n_aud = _cleanup_capture_folder(self.output_dir, self.logger)
+        self.logger.info(
+            "Startup cleanup finished: removed %s image file(s), %s audio file(s) under %s and %s (.gitkeep kept)",
+            n_img,
+            n_aud,
+            self.images_dir,
+            self.output_dir,
+        )
 
     def _run_command(self, command: list[str]) -> str:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -137,6 +172,7 @@ class OutputAudioRecorder:
     def _take_screenshot_safe(self) -> None:
         now = time.time()
         if now - self._last_f9_screenshot < self._f9_debounce_seconds:
+            self.logger.debug("F9 ignored (debounce %.2fs)", self._f9_debounce_seconds)
             return
         self._last_f9_screenshot = now
         try:
@@ -145,19 +181,71 @@ class OutputAudioRecorder:
         except Exception:
             self.logger.exception("Screenshot capture failed")
 
+    def _request_batch_analyze(self) -> None:
+        with self._batch_lock:
+            if self._batch_running:
+                self.logger.info("Session analysis already running; ignoring F2")
+                return
+            self._batch_running = True
+        threading.Thread(target=self._batch_analyze_worker, daemon=True).start()
+
+    def _batch_analyze_worker(self) -> None:
+        try:
+            pngs = sorted(self.images_dir.glob("*.png"))
+            wavs = sorted(self.output_dir.glob("*.wav"))
+            paths_png = [str(p) for p in pngs]
+            paths_wav = [str(p) for p in wavs]
+
+            self.logger.info(
+                "F2 batch: %s screenshot(s), %s audio file(s)",
+                len(paths_png),
+                len(paths_wav),
+            )
+
+            if not paths_png and not paths_wav:
+                self.logger.info("F2 batch: empty session, sending hint to Telegram")
+                send_message("Session analysis: no screenshots or audio to send. Use F9 and F8 first.")
+                return
+            if not paths_png:
+                self.logger.info("F2 batch: no PNGs, sending hint to Telegram")
+                send_message("Session analysis: add at least one screenshot (F9) before running the pipeline.")
+                return
+
+            prompt_path = str(self.project_dir / self.config.default_prompt_path)
+            self.logger.info("F2 batch: running pipeline and Telegram (delete after send if not DEBUG_TELEGRAM)")
+            send_session_to_telegram(paths_png, paths_wav, prompt_path)
+            self.logger.info("F2 batch: send_session_to_telegram finished")
+        except Exception:
+            self.logger.exception("Session analysis failed")
+            try:
+                send_message("Session analysis failed; check logs.")
+            except Exception:
+                self.logger.exception("Could not send Telegram error")
+        finally:
+            with self._batch_lock:
+                self._batch_running = False
+
     def on_press(self, key: keyboard.Key | keyboard.KeyCode) -> None:
         if key == self.record_hotkey:
+            self.logger.debug("Hotkey press: F8 (record)")
             self.start_recording()
         elif key == self.screenshot_hotkey:
+            self.logger.debug("Hotkey press: F9 (screenshot)")
             self._take_screenshot_safe()
+        elif key == self.batch_hotkey:
+            self.logger.info("Hotkey press: F2 (session → pipeline)")
+            self._request_batch_analyze()
 
     def on_release(self, key: keyboard.Key | keyboard.KeyCode) -> None:
         if key == self.record_hotkey:
+            self.logger.debug("Hotkey release: F8 (stop record)")
             self.stop_recording()
 
     def run(self) -> None:
         self.logger.info("Screen tool hotkey listener started")
-        self.logger.info("Hold F8 to record system output audio; press F9 to save a screenshot")
+        self.logger.info(
+            "F8 hold=record audio, F9=screenshot, F2=send session (screenshots+audio) to pipeline/Telegram"
+        )
 
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
             listener.join()

@@ -41,22 +41,32 @@ def _extract_json_text(text: str) -> str:
     raise ValueError("No JSON object found in model output")
 
 
-def run_extractor(image_path: str) -> ExtractResult:
+def run_extractor(
+    image_paths: str | list[str],
+    supplemental_context: str = "",
+) -> ExtractResult:
     config = load_config()
     logs_dir = os.path.join(config.project_dir, config.default_log_dir)
     logger = setup_logger(logs_dir=logs_dir, logger_name="screen_tool.pipeline.extractor", level=config.log_level)
 
-    if not os.path.isfile(image_path):
-        raise FileNotFoundError(f"Image file not found: {image_path}")
+    if isinstance(image_paths, str):
+        paths = [image_paths]
+    else:
+        paths = list(image_paths)
+
+    if not paths:
+        raise ValueError("At least one image path is required")
+
+    for p in paths:
+        if not os.path.isfile(p):
+            raise FileNotFoundError(f"Image file not found: {p}")
 
     if not config.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is not set in .env")
 
     client = OpenAI(api_key=config.openai_api_key)
-    mime_type = _detect_mime_type(image_path)
-    base64_image = _encode_file_base64(image_path)
 
-    prompt = """
+    prompt_body = """
 Extract all visible information from the image and separate task-relevant content from surrounding UI noise.
 
 Return JSON with exactly these fields:
@@ -86,23 +96,37 @@ Rules:
 - Output JSON only.
 """.strip()
 
-    logger.info("Extractor started for image: %s", image_path)
+    extra = ""
+    if supplemental_context.strip():
+        extra = (
+            "The following is transcribed audio from the user's session. Use it together with the screenshot(s).\n\n"
+            + supplemental_context.strip()
+            + "\n\n---\n\n"
+        )
+    if len(paths) > 1:
+        extra += "Multiple screenshots are provided in chronological order; merge information across them as needed.\n\n---\n\n"
+
+    prompt = extra + prompt_body
+
+    logger.info("Extractor started for %s image(s): %s", len(paths), paths)
+
+    content: list[dict] = [{"type": "input_text", "text": prompt}]
+    for image_path in paths:
+        mime_type = _detect_mime_type(image_path)
+        base64_image = _encode_file_base64(image_path)
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:{mime_type};base64,{base64_image}",
+            }
+        )
 
     response = client.responses.create(
         model=config.openai_model,
         input=[
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": prompt,
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:{mime_type};base64,{base64_image}",
-                    },
-                ],
+                "content": content,
             }
         ],
     )

@@ -1,459 +1,191 @@
-Ниже — обновлённый `README.md`, с учётом текущей архитектуры пайплайна, автоопределения `chat_id`, выполнения Python-кода и `OUTPUT_LANGUAGE`. Основано на твоём текущем README и черновике структуры/позиционирования. 
-
-````md
 # ScreenMind
 
-ScreenMind is a local AI utility that lets you press a hotkey, capture your screen, solve what is visible, and receive the answer directly in Telegram.
+ScreenMind is a local Linux utility that captures what is on your screen (and optionally system audio), runs a multi-step LLM pipeline, and delivers the answer in **Telegram**.
 
-It is designed for short tasks that appear on screen, including:
-- code output questions
-- coding tasks
-- code bug explanation tasks
-- logic questions
-- short quiz-style prompts
-- math questions
+It is aimed at short, on-screen tasks (code quizzes, logic, math, small questions). Everything runs **on demand**: there is no always-on Telegram bot server in the default setup.
 
-The project runs on demand only:
-- no long-running bot process
-- no background web server
-- no Docker required for normal use
+---
 
-## How it works
+## What you can run
 
-1. A hotkey triggers `run_screenshot.sh`
-2. A screenshot is saved locally
-3. The screenshot is processed through a multi-step pipeline:
-   - extract visible information
-   - isolate task-relevant content from UI noise
-   - classify the task
-   - route to the correct solver
-   - execute Python code when needed
-   - validate and format the final answer
-4. The final answer is sent to Telegram
-5. The process exits
+| Flow | What it does |
+|------|----------------|
+| **Screen hotkey** | One screenshot → pipeline → Telegram (process exits). |
+| **Session listener** (optional) | Record audio (F8), take screenshots (F9), then send **all** captures to the pipeline with **F2**. |
 
-## Features
-
-- Global hotkey screenshot capture
-- Local on-demand execution
-- Telegram delivery
-- Automatic Telegram `chat_id` discovery on first run
-- Multi-step pipeline instead of a single prompt
-- Python code execution for output-based code questions
-- Support for code bug explanation tasks
-- Structured logs
-- Configurable output language through `.env`
-
-## Project Structure
-
-```text
-.
-├── images/                      # saved screenshots
-├── logs/                        # runtime logs (ignored by git)
-├── prompts/                     # optional prompt templates
-├── scripts/
-│   ├── analyze_screenshot.py
-│   ├── send_telegram.py
-│   ├── take_screenshot.py
-│   ├── common/
-│   │   ├── config.py
-│   │   ├── logger.py
-│   │   └── schemas.py
-│   └── pipeline/
-│       ├── extractor.py
-│       ├── classifier.py
-│       ├── qa_solver.py
-│       ├── code_reconstructor.py
-│       ├── code_executor.py
-│       ├── validator.py
-│       ├── formatter.py
-│       └── orchestrator.py
-├── run_screenshot.sh            # main entrypoint
-├── .env                         # secrets and runtime config (not in git)
-├── .env.example
-├── requirements.txt
-└── README.md
-````
+---
 
 ## Requirements
 
-* Linux
-* Python 3.10+
-* Telegram account
-* OpenAI API key
-* Telegram bot token
-* `sxhkd` for global hotkeys
+- **OS:** Linux (X11; global hotkeys via `pynput` / `sxhkd` expect a normal desktop session).
+- **Python:** 3.10 or newer.
+- **Network:** For OpenAI and Telegram APIs.
+- **Audio capture (session mode only):** `ffmpeg`, PulseAudio/PipeWire (`pactl`).
 
-## Installation
+---
 
-### 1. Clone the repository
+## Quick setup (new users)
+
+### 1. Clone and enter the project
 
 ```bash
-git clone https://github.com/your-account/screenmind.git
+git clone <your-repo-url> screenmind
 cd screenmind
 ```
 
-### 2. Create a virtual environment
+### 2. Virtual environment and dependencies
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Create `.env`
+### 3. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and fill in your secrets:
+Edit `.env` and set at minimum:
 
-```dotenv
-OPENAI_API_KEY=your_openai_api_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=
+- `OPENAI_API_KEY` — from [OpenAI](https://platform.openai.com/api-keys)
+- `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather) (`/newbot`)
 
-OPENAI_MODEL=gpt-4.1-mini
-OUTPUT_LANGUAGE=en
+Leave `TELEGRAM_CHAT_ID` empty on first use; the app can fill it after you message the bot (see below).
 
-TELEGRAM_SEND_IMAGE=true
+**Save the file** after editing; the app reads the real file on disk.
 
-DEFAULT_IMAGE_DIR=images
-DEFAULT_LOG_DIR=logs
-DEFAULT_PROMPT_PATH=prompts/default_prompt.txt
+### 4. Telegram bot (once)
 
-LOG_LEVEL=INFO
-```
+1. Open your bot in Telegram and send `/start` (needed for automatic `chat_id` discovery).
+2. Run a one-shot analysis (next step). On first success, `TELEGRAM_CHAT_ID` may be written into `.env`.
 
-## Telegram Setup
+### 5. Test the pipeline (one screenshot)
 
-### 1. Create a bot
-
-Open Telegram and use:
-
-```text
-@BotFather
-```
-
-Create a new bot with:
-
-```text
-/newbot
-```
-
-Copy the bot token into `.env` as `TELEGRAM_BOT_TOKEN`.
-
-### 2. Start the bot
-
-Open your bot and send:
-
-```text
-/start
-```
-
-This is required so ScreenMind can detect your Telegram `chat_id` automatically.
-
-## First Run
-
-Run the project manually once:
+From the project directory:
 
 ```bash
 ./run_screenshot.sh
 ```
 
-What happens on first run:
+You should get a new screenshot under `images/`, then a message in Telegram with the answer.
 
-1. A screenshot is captured
-2. The screenshot is analyzed
-3. ScreenMind validates the Telegram bot token
-4. If `TELEGRAM_CHAT_ID` is empty, it tries to resolve it automatically
-5. The resolved `chat_id` is saved into `.env`
-6. The answer is sent to Telegram
+---
 
-After the first successful run, no manual `chat_id` setup is needed.
+## Global hotkey: `Ctrl+Alt+Q` → analyze screen
 
-## Hotkey Setup
-
-Install `sxhkd`:
+Install `sxhkd` (example on Debian/Ubuntu):
 
 ```bash
 sudo apt update
 sudo apt install sxhkd
 ```
 
-Create config directory if needed:
-
-```bash
-mkdir -p ~/.config/sxhkd
-```
-
-Edit hotkey config:
-
-```bash
-nano ~/.config/sxhkd/sxhkdrc
-```
-
-Add:
+Create or edit `~/.config/sxhkd/sxhkdrc` and add (use **your** project path):
 
 ```text
 ctrl + alt + q
-    /home/YOUR_USERNAME/path_to_project/run_screenshot.sh
+    /home/YOUR_USER/path/to/screenmind/run_screenshot.sh
 ```
 
-Replace `/home/YOUR_USERNAME/path_to_project/` with the real absolute path to your project.
+Start `sxhkd` (or add it to your session autostart). Then **Ctrl+Alt+Q** runs `run_screenshot.sh`: capture → pipeline → Telegram.
 
-### Start `sxhkd`
+---
+
+## Session mode: audio + screenshots + batch send
+
+For **hold F8** (record system audio), **F9** (screenshot), and **F2** (send everything to the pipeline), start the long-running listener:
 
 ```bash
-sxhkd &
+./run_audio_output_listener.sh
 ```
 
-### Enable autostart
+Keep this terminal open (or run it under `tmux`/systemd). On startup it clears previous captures in `images/` and `audio_captures/` (keeps `.gitkeep` files).
 
-```bash
-mkdir -p ~/.config/autostart
-nano ~/.config/autostart/sxhkd.desktop
-```
+| Key | Action |
+|-----|--------|
+| **F8** (hold) | Record system output to `audio_captures/*.wav` |
+| **F9** | Save a screenshot under `DEFAULT_IMAGE_DIR` (default `images/`) |
+| **F2** | Transcribe audio (Whisper), run the pipeline on **all** PNGs + WAVs, send result to Telegram |
 
-Paste:
+With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, then answer), and files are **not** deleted after a successful run; they are cleared on the **next listener start**.
 
-```ini
-[Desktop Entry]
-Type=Application
-Exec=sxhkd
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=sxhkd
-```
+---
 
-## Usage
+## Optional: screenshot file only (no LLM)
 
-Press your configured hotkey:
+`run_screenshot_save_only.sh` saves a PNG using the same capture code as the main flow, without analysis. You can bind it in `sxhkd` if you only want a file on disk.
 
-```text
-CTRL + ALT + Q
-```
+---
 
-Result:
+## Configuration (`.env`)
 
-* screenshot is captured
-* visible task is analyzed
-* answer is sent to Telegram
-* process exits
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | OpenAI API key (required). |
+| `OPENAI_MODEL` | Model id for vision + text (default in example may vary). |
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather. |
+| `TELEGRAM_CHAT_ID` | Your chat id; can be auto-filled on first run. |
+| `TELEGRAM_SEND_IMAGE` | If `true`, `run_screenshot.sh` also sends the screenshot image to Telegram after text. |
+| `OUTPUT_LANGUAGE` | Language for reasoning-style answers (e.g. `en`, `ru`). |
+| `DEFAULT_IMAGE_DIR` | Where F9 / screenshots are stored (default `images`). |
+| `DEBUG_TELEGRAM` | `true`: extra Telegram debug messages + keep session files until listener restart; `false`: normal behavior. |
+| `LOG_LEVEL` | e.g. `INFO` or `DEBUG`. |
 
-## Pipeline Overview
+Copy from `.env.example` and adjust. Do not commit `.env`.
 
-ScreenMind does not rely on one single prompt.
-
-It uses a staged pipeline:
-
-1. **Extractor**
-
-   * extracts all visible text/code
-   * separates task-relevant content from surrounding UI noise
-
-2. **Classifier**
-
-   * determines what kind of task is shown:
-
-     * code output
-     * code fix
-     * code write
-     * code bug explanation
-     * logic
-     * math
-     * short question
-     * unknown
-
-3. **Router**
-
-   * sends the task to the correct solving path
-
-4. **Solver**
-
-   * QA solver for reasoning tasks
-   * code reconstruction + execution for Python output tasks
-
-5. **Validator**
-
-   * selects the most reliable final answer
-
-6. **Formatter**
-
-   * formats the final Telegram message
-
-## Supported Task Types
-
-ScreenMind currently works best with:
-
-* Python code output questions
-* short code understanding tasks
-* code bug explanation tasks
-* small logic questions
-* short direct questions
-* basic math tasks
-
-It is less reliable when:
-
-* the visible task is incomplete
-* the screenshot cuts off crucial lines
-* the image is too noisy or too small
-* the task depends on hidden context outside the screenshot
-
-## Configuration
-
-### `.env` variables
-
-```dotenv
-OPENAI_API_KEY=
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-
-OPENAI_MODEL=gpt-4.1-mini
-OUTPUT_LANGUAGE=en
-
-TELEGRAM_SEND_IMAGE=true
-
-DEFAULT_IMAGE_DIR=images
-DEFAULT_LOG_DIR=logs
-DEFAULT_PROMPT_PATH=prompts/default_prompt.txt
-
-LOG_LEVEL=INFO
-```
-
-### `OUTPUT_LANGUAGE`
-
-Controls the language of reasoning-based answers.
-
-Examples:
-
-```dotenv
-OUTPUT_LANGUAGE=en
-```
-
-```dotenv
-OUTPUT_LANGUAGE=ru
-```
-
-```dotenv
-OUTPUT_LANGUAGE=es
-```
-
-This affects text answers produced by the QA reasoning path. Code execution output remains unchanged.
+---
 
 ## Logs
 
-Logs are stored in:
+| File | Content |
+|------|---------|
+| `logs/service.log` | **Recommended:** merged stream from Python components (listener, pipeline, Telegram). |
+| `logs/app.log` | Rotating log for `screen_tool` loggers. |
+| `logs/launcher.log` | `run_screenshot.sh` lifecycle. |
+| `logs/audio_listener_launcher.log` | Wrapper output for `run_audio_output_listener.sh`. |
 
-```text
-logs/
-```
-
-Main files:
-
-* `logs/launcher.log` — shell launcher lifecycle
-* `logs/app.log` — Python pipeline logs
-
-Useful commands:
+**Watch live activity:**
 
 ```bash
-tail -f logs/launcher.log
+tail -f logs/service.log
 ```
+
+You can also follow multiple files:
 
 ```bash
-tail -f logs/app.log
+tail -f logs/service.log logs/audio_listener_launcher.log
 ```
 
-```bash
-tail -f logs/launcher.log logs/app.log
-```
+---
 
-To watch only pipeline logs:
+## Pipeline (short)
 
-```bash
-tail -f logs/app.log | grep --line-buffered "screen_tool.pipeline"
-```
+1. **Extractor** — reads text/code from image(s); optional Whisper transcript for session mode.  
+2. **Classifier** — task type.  
+3. **Solver** — QA and/or Python execution when appropriate.  
+4. **Validator / formatter** — final answer text for Telegram.
+
+---
 
 ## Troubleshooting
 
-### Telegram: `Unauthorized`
+- **`DEBUG_TELEGRAM` looks false in logs** — Ensure the line is **saved** in `.env`, then restart the listener.  
+- **Nothing on hotkey** — Check `sxhkd` is running: `pgrep -a sxhkd`.  
+- **Listener exits immediately** — See `logs/audio_listener_launcher.log` and `logs/service.log`; `pynput` needs a display (`DISPLAY`, typically X11).  
+- **No audio in session mode** — Install `ffmpeg`; ensure `pactl`/PipeWire monitor works on your system.  
+- **Telegram errors** — Confirm `/start` was sent to the bot; token and chat id are correct.
 
-Your bot token is invalid.
+---
 
-Fix:
+## Security
 
-* regenerate token via BotFather
-* update `TELEGRAM_BOT_TOKEN` in `.env`
+- Never commit `.env` or share API keys.  
+- Bot token and OpenAI key are sensitive; this tool is intended for **local personal use**.
 
-### Telegram: `chat not found`
-
-Usually means:
-
-* you did not send `/start` to the bot
-* `TELEGRAM_CHAT_ID` contains an invalid value
-* `TELEGRAM_CHAT_ID` should be empty on first run if you want auto-detection
-
-### Nothing happens on hotkey
-
-Check that `sxhkd` is running:
-
-```bash
-ps aux | grep sxhkd
-```
-
-### Logs are not updating
-
-Check:
-
-```bash
-tail -f logs/launcher.log
-```
-
-If launcher works but Python pipeline does not, also check:
-
-```bash
-tail -f logs/app.log
-```
-
-### The system says the condition is incomplete
-
-This usually means:
-
-* the task-relevant content is actually cut off
-* or the classifier detected missing lines in code/task text
-
-Try:
-
-* making the code larger on screen
-* ensuring the full task is visible
-* removing surrounding clutter when possible
-
-## Security Notes
-
-* Never commit `.env`
-* Telegram bot token gives full control over the bot
-* OpenAI API key is billable
-* This project is intended for local personal use
-
-## Roadmap
-
-* better isolation of task-relevant content from UI noise
-* stronger support for bug explanation tasks
-* support for more code languages
-* better handling of partially visible tasks
-* multiple hotkeys for different modes
-* optional Dockerized execution sandbox
+---
 
 ## License
 
 MIT
-
-```
-```
