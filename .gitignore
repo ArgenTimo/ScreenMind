@@ -17,6 +17,9 @@ logs/*
 images/*
 !images/.gitkeep
 
+# Audio
+*.wav
+
 # OS
 .DS_Store
 Thumbs.db

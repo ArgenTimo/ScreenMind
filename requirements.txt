@@ -2,3 +2,4 @@ mss
 openai
 python-dotenv
 requests
+pynput
