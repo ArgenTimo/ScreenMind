@@ -240,10 +240,22 @@ class OutputAudioRecorder:
             hk_r = _hotkey_label(self.config.session_hotkey_record)
             hk_s = _hotkey_label(self.config.session_hotkey_screenshot)
             hk_b = _hotkey_label(self.config.session_hotkey_submit)
-            pngs = sorted(self.images_dir.glob("*.png"))
-            wavs = sorted(self.output_dir.glob("*.wav"))
-            paths_png = [str(p) for p in pngs]
-            paths_wav = [str(p) for p in wavs]
+            pngs = sorted(self.images_dir.glob("*.png"), key=lambda p: p.name)
+            wavs = sorted(self.output_dir.glob("*.wav"), key=lambda p: p.name)
+            paths_png = list(dict.fromkeys(str(p) for p in pngs))
+            paths_wav = list(dict.fromkeys(str(p) for p in wavs))
+
+            with self.lock:
+                recording = self.is_recording
+                active_wav = self.current_file
+            if recording and active_wav is not None:
+                active_s = str(active_wav)
+                if active_s in paths_wav:
+                    paths_wav = [p for p in paths_wav if p != active_s]
+                    self.logger.warning(
+                        "F2 batch: excluded WAV still being recorded (finish recording, then submit): %s",
+                        active_s,
+                    )
 
             self.logger.info(
                 "%s batch: %s screenshot(s), %s audio file(s)",

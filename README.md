@@ -109,9 +109,9 @@ Default hotkeys (override in `.env` with `SESSION_HOTKEY_RECORD`, `SESSION_HOTKE
 |-----|--------|
 | **Record** (hold) | Record system output to `audio_captures/*.wav` |
 | **Screenshot** | Save a PNG under `DEFAULT_IMAGE_DIR` (default `images/`) |
-| **Submit** | Transcribe audio, run the pipeline on **all** PNGs + WAVs, send result to Telegram |
+| **Submit** | Collects **all** `*.png` and `*.wav` (sorted by filename), transcribes each WAV, then runs the vision pipeline **once** with every screenshot in a **single** model request plus the combined transcript. |
 
-With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, then answer), and files are **not** deleted after a successful run; they are cleared on the **next listener start**.
+A WAV that is **still recording** when you press Submit is skipped until you release the record key. With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, then answer), and files are **not** deleted after a successful run; they are cleared on the **next listener start**.
 
 ---
 

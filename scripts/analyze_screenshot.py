@@ -45,6 +45,16 @@ def delete_capture_files(paths: list[str]) -> None:
             os.remove(p)
 
 
+def validate_session_files(image_paths: list[str], audio_paths: list[str]) -> None:
+    """Ensure every path exists before one batched pipeline run."""
+    for path in image_paths:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Image file not found: {path}")
+    for path in audio_paths:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Audio file not found: {path}")
+
+
 def analyze_image(image_path: str, prompt_path: str) -> str:
     config = load_config()
     logs_dir = os.path.join(config.project_dir, config.default_log_dir)
@@ -81,10 +91,7 @@ def analyze_session(image_paths: list[str], audio_paths: list[str], prompt_path:
     logger.info("Audio: %s", audio_paths)
     logger.info("Prompt path is ignored because pipeline prompts are internal: %s", prompt_path)
 
-    for path in image_paths:
-        if not os.path.isfile(path):
-            logger.error("Image file not found: %s", path)
-            raise FileNotFoundError(f"Image file not found: {path}")
+    validate_session_files(image_paths, audio_paths)
 
     final_answer, transcript = run_pipeline_session(image_paths, audio_paths)
     message = format_for_telegram(final_answer)
@@ -103,11 +110,13 @@ def send_session_to_telegram(image_paths: list[str], audio_paths: list[str], pro
 
     logger.info("send_session_to_telegram: images=%s audio=%s DEBUG_TELEGRAM=%s", image_paths, audio_paths, config.debug_telegram)
 
-    for path in image_paths:
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"Image file not found: {path}")
+    validate_session_files(image_paths, audio_paths)
 
-    logger.info("Running pipeline (session)")
+    logger.info(
+        "Running batched session pipeline: %s image(s) in one extractor request, %s WAV(s) transcribed then merged into context",
+        len(image_paths),
+        len(audio_paths),
+    )
     final_answer, transcript = run_pipeline_session(image_paths, audio_paths)
     body = format_for_telegram(final_answer)
     logger.info("Pipeline done: answer_kind=%s len(answer)=%s", final_answer.answer_kind, len(body))
