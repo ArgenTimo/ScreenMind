@@ -10,6 +10,7 @@ from pynput import keyboard
 
 from common.config import load_config
 from common.logger import setup_logger
+from take_screenshot import take_screenshot
 
 
 class OutputAudioRecorder:
@@ -30,7 +31,10 @@ class OutputAudioRecorder:
         self.lock = threading.Lock()
         self.is_recording = False
         self.current_file: Path | None = None
-        self.hotkey = keyboard.Key.f8
+        self.record_hotkey = keyboard.Key.f8
+        self.screenshot_hotkey = keyboard.Key.f9
+        self._last_f9_screenshot = 0.0
+        self._f9_debounce_seconds = 0.5
 
     def _run_command(self, command: list[str]) -> str:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -130,17 +134,30 @@ class OutputAudioRecorder:
                 self.current_file = None
                 self.is_recording = False
 
+    def _take_screenshot_safe(self) -> None:
+        now = time.time()
+        if now - self._last_f9_screenshot < self._f9_debounce_seconds:
+            return
+        self._last_f9_screenshot = now
+        try:
+            path = take_screenshot(self.config.default_image_dir)
+            self.logger.info("Screenshot saved (F9): %s", path)
+        except Exception:
+            self.logger.exception("Screenshot capture failed")
+
     def on_press(self, key: keyboard.Key | keyboard.KeyCode) -> None:
-        if key == self.hotkey:
+        if key == self.record_hotkey:
             self.start_recording()
+        elif key == self.screenshot_hotkey:
+            self._take_screenshot_safe()
 
     def on_release(self, key: keyboard.Key | keyboard.KeyCode) -> None:
-        if key == self.hotkey:
+        if key == self.record_hotkey:
             self.stop_recording()
 
     def run(self) -> None:
-        self.logger.info("Audio output recorder listener started")
-        self.logger.info("Hold F8 to record system output audio")
+        self.logger.info("Screen tool hotkey listener started")
+        self.logger.info("Hold F8 to record system output audio; press F9 to save a screenshot")
 
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
             listener.join()
