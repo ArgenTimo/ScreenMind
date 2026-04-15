@@ -11,7 +11,7 @@ It is aimed at short, on-screen tasks (code quizzes, logic, math, small question
 | Flow | What it does |
 |------|----------------|
 | **Screen hotkey** | One screenshot → pipeline → Telegram (process exits). |
-| **Session listener** (optional) | Record audio (F8), take screenshots (F9), then send **all** captures to the pipeline with **F2**. |
+| **Session listener** (optional) | Hold **record** key, **screenshot** key, then **submit** key (defaults F8 / F9 / F2; configurable via `.env`). |
 
 ---
 
@@ -95,7 +95,7 @@ Start `sxhkd` (or add it to your session autostart). Then **Ctrl+Alt+Q** runs `r
 
 ## Session mode: audio + screenshots + batch send
 
-For **hold F8** (record system audio), **F9** (screenshot), and **F2** (send everything to the pipeline), start the long-running listener:
+Start the long-running listener:
 
 ```bash
 ./run_audio_output_listener.sh
@@ -103,13 +103,15 @@ For **hold F8** (record system audio), **F9** (screenshot), and **F2** (send eve
 
 Keep this terminal open (or run it under `tmux`/systemd). On startup it clears previous captures in `images/` and `audio_captures/` (keeps `.gitkeep` files).
 
+Default hotkeys (override in `.env` with `SESSION_HOTKEY_RECORD`, `SESSION_HOTKEY_SCREENSHOT`, `SESSION_HOTKEY_SUBMIT` — use [pynput `Key` names](https://pynput.readthedocs.io/en/latest/keyboard.html#pynput.keyboard.Key), e.g. `f8`, `f12`, `scroll_lock`):
+
 | Key | Action |
 |-----|--------|
-| **F8** (hold) | Record system output to `audio_captures/*.wav` |
-| **F9** | Save a screenshot under `DEFAULT_IMAGE_DIR` (default `images/`) |
-| **F2** | Transcribe audio (Whisper), run the pipeline on **all** PNGs + WAVs, send result to Telegram |
+| **Record** (hold) | Record system output to `audio_captures/*.wav` |
+| **Screenshot** | Save a PNG under `DEFAULT_IMAGE_DIR` (default `images/`) |
+| **Submit** | Collects **all** `*.png` and `*.wav` (sorted by filename), transcribes each WAV, then runs the vision pipeline **once** with every screenshot in a **single** model request plus the combined transcript. |
 
-With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, then answer), and files are **not** deleted after a successful run; they are cleared on the **next listener start**.
+A WAV that is **still recording** when you press Submit is skipped until you release the record key. With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, then answer), and files are **not** deleted after a successful run; they are cleared on the **next listener start**.
 
 ---
 
@@ -129,7 +131,9 @@ With `DEBUG_TELEGRAM=true`, Telegram receives **two** messages (debug bundle, th
 | `TELEGRAM_CHAT_ID` | Your chat id; can be auto-filled on first run. |
 | `TELEGRAM_SEND_IMAGE` | If `true`, `run_screenshot.sh` also sends the screenshot image to Telegram after text. |
 | `OUTPUT_LANGUAGE` | Language for reasoning-style answers (e.g. `en`, `ru`). |
-| `DEFAULT_IMAGE_DIR` | Where F9 / screenshots are stored (default `images`). |
+| `DEFAULT_IMAGE_DIR` / `DEFAULT_LOG_DIR` / `DEFAULT_PROMPT_PATH` | Paths relative to the project root. |
+| `SESSION_HOTKEY_RECORD` / `SESSION_HOTKEY_SCREENSHOT` / `SESSION_HOTKEY_SUBMIT` | Session listener keys (defaults `f8` / `f9` / `f2`). |
+| `OPENAI_TRANSCRIPTION_MODEL` | Whisper model for session audio (default `whisper-1`). |
 | `DEBUG_TELEGRAM` | `true`: extra Telegram debug messages + keep session files until listener restart; `false`: normal behavior. |
 | `LOG_LEVEL` | e.g. `INFO` or `DEBUG`. |
 

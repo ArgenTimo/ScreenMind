@@ -10,9 +10,14 @@ from pynput import keyboard
 
 from analyze_screenshot import send_session_to_telegram
 from common.config import load_config
+from common.hotkeys import bind_key
 from common.logger import setup_logger
 from send_telegram import send_message
 from take_screenshot import take_screenshot
+
+
+def _hotkey_label(spec: str) -> str:
+    return spec.strip().upper().replace("_", " ")
 
 
 def _cleanup_capture_folder(folder: Path, logger) -> int:
@@ -47,15 +52,26 @@ class OutputAudioRecorder:
             self.config.debug_telegram,
             self.config.default_image_dir,
         )
+        try:
+            # Must use this file's `keyboard` object so Key instances match Listener events (==).
+            self.record_hotkey = bind_key(keyboard, self.config.session_hotkey_record, "f8")
+            self.screenshot_hotkey = bind_key(keyboard, self.config.session_hotkey_screenshot, "f9")
+            self.batch_hotkey = bind_key(keyboard, self.config.session_hotkey_submit, "f2")
+        except ValueError as exc:
+            self.logger.error("Invalid SESSION_HOTKEY_* in .env: %s", exc)
+            raise
+        self.logger.info(
+            "Session hotkeys: hold %s=record, %s=screenshot, %s=submit batch",
+            _hotkey_label(self.config.session_hotkey_record),
+            _hotkey_label(self.config.session_hotkey_screenshot),
+            _hotkey_label(self.config.session_hotkey_submit),
+        )
         self.logger.info("Unified activity log: %s", logs_dir / "service.log")
 
         self.process: subprocess.Popen | None = None
         self.lock = threading.Lock()
         self.is_recording = False
         self.current_file: Path | None = None
-        self.record_hotkey = keyboard.Key.f8
-        self.screenshot_hotkey = keyboard.Key.f9
-        self.batch_hotkey = keyboard.Key.f2
         self._last_f9_screenshot = 0.0
         self._f9_debounce_seconds = 0.5
         self._batch_lock = threading.Lock()
@@ -148,6 +164,19 @@ class OutputAudioRecorder:
             )
             self.current_file = output_path
             self.is_recording = True
+            # If ffmpeg exits immediately (bad Pulse device, etc.), avoid leaving a "recording" that never wrote audio.
+            time.sleep(0.08)
+            if self.process.poll() is not None:
+                self.logger.error(
+                    "ffmpeg exited immediately (code=%s). Pulse input: %s. "
+                    "Check: pactl list short sources, ffmpeg -f pulse -i ...",
+                    self.process.returncode,
+                    monitor_source,
+                )
+                self.process = None
+                self.current_file = None
+                self.is_recording = False
+                return
 
     def stop_recording(self) -> None:
         with self.lock:
@@ -156,15 +185,21 @@ class OutputAudioRecorder:
 
             self.logger.info("Stopping output audio recording")
 
+            proc = self.process
             try:
-                os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
-                self.process.wait(timeout=5)
+                os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.logger.warning("ffmpeg did not stop on SIGINT, killing")
-                os.killpg(os.getpgid(self.process.pid), signal.SIGKILL)
-                self.process.wait(timeout=5)
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait(timeout=5)
             finally:
-                self.logger.info("Saved output audio file: %s", self.current_file)
+                rc = proc.poll()
+                self.logger.info(
+                    "Saved output audio file: %s (ffmpeg exit=%s)",
+                    self.current_file,
+                    rc,
+                )
                 self.process = None
                 self.current_file = None
                 self.is_recording = False
@@ -172,49 +207,82 @@ class OutputAudioRecorder:
     def _take_screenshot_safe(self) -> None:
         now = time.time()
         if now - self._last_f9_screenshot < self._f9_debounce_seconds:
-            self.logger.debug("F9 ignored (debounce %.2fs)", self._f9_debounce_seconds)
+            self.logger.debug(
+                "%s ignored (debounce %.2fs)",
+                _hotkey_label(self.config.session_hotkey_screenshot),
+                self._f9_debounce_seconds,
+            )
             return
         self._last_f9_screenshot = now
         try:
             path = take_screenshot(self.config.default_image_dir)
-            self.logger.info("Screenshot saved (F9): %s", path)
+            self.logger.info(
+                "Screenshot saved (%s): %s",
+                _hotkey_label(self.config.session_hotkey_screenshot),
+                path,
+            )
         except Exception:
             self.logger.exception("Screenshot capture failed")
 
     def _request_batch_analyze(self) -> None:
         with self._batch_lock:
             if self._batch_running:
-                self.logger.info("Session analysis already running; ignoring F2")
+                self.logger.info(
+                    "Session analysis already running; ignoring %s",
+                    _hotkey_label(self.config.session_hotkey_submit),
+                )
                 return
             self._batch_running = True
         threading.Thread(target=self._batch_analyze_worker, daemon=True).start()
 
     def _batch_analyze_worker(self) -> None:
         try:
-            pngs = sorted(self.images_dir.glob("*.png"))
-            wavs = sorted(self.output_dir.glob("*.wav"))
-            paths_png = [str(p) for p in pngs]
-            paths_wav = [str(p) for p in wavs]
+            hk_r = _hotkey_label(self.config.session_hotkey_record)
+            hk_s = _hotkey_label(self.config.session_hotkey_screenshot)
+            hk_b = _hotkey_label(self.config.session_hotkey_submit)
+            pngs = sorted(self.images_dir.glob("*.png"), key=lambda p: p.name)
+            wavs = sorted(self.output_dir.glob("*.wav"), key=lambda p: p.name)
+            paths_png = list(dict.fromkeys(str(p) for p in pngs))
+            paths_wav = list(dict.fromkeys(str(p) for p in wavs))
+
+            with self.lock:
+                recording = self.is_recording
+                active_wav = self.current_file
+            if recording and active_wav is not None:
+                active_s = str(active_wav)
+                if active_s in paths_wav:
+                    paths_wav = [p for p in paths_wav if p != active_s]
+                    self.logger.warning(
+                        "F2 batch: excluded WAV still being recorded (finish recording, then submit): %s",
+                        active_s,
+                    )
 
             self.logger.info(
-                "F2 batch: %s screenshot(s), %s audio file(s)",
+                "%s batch: %s screenshot(s), %s audio file(s)",
+                hk_b,
                 len(paths_png),
                 len(paths_wav),
             )
-
             if not paths_png and not paths_wav:
-                self.logger.info("F2 batch: empty session, sending hint to Telegram")
-                send_message("Session analysis: no screenshots or audio to send. Use F9 and F8 first.")
+                self.logger.info("%s batch: empty session, sending hint to Telegram", hk_b)
+                send_message(
+                    f"Session analysis: no screenshots or audio to send. Use {hk_s} (screenshot) and {hk_r} (record) first."
+                )
                 return
             if not paths_png:
-                self.logger.info("F2 batch: no PNGs, sending hint to Telegram")
-                send_message("Session analysis: add at least one screenshot (F9) before running the pipeline.")
+                self.logger.info("%s batch: no PNGs, sending hint to Telegram", hk_b)
+                send_message(
+                    f"Session analysis: add at least one screenshot ({hk_s}) before running the pipeline."
+                )
                 return
 
             prompt_path = str(self.project_dir / self.config.default_prompt_path)
-            self.logger.info("F2 batch: running pipeline and Telegram (delete after send if not DEBUG_TELEGRAM)")
+            self.logger.info(
+                "%s batch: running pipeline and Telegram (delete after send if not DEBUG_TELEGRAM)",
+                hk_b,
+            )
             send_session_to_telegram(paths_png, paths_wav, prompt_path)
-            self.logger.info("F2 batch: send_session_to_telegram finished")
+            self.logger.info("%s batch: send_session_to_telegram finished", hk_b)
         except Exception:
             self.logger.exception("Session analysis failed")
             try:
@@ -226,25 +294,43 @@ class OutputAudioRecorder:
                 self._batch_running = False
 
     def on_press(self, key: keyboard.Key | keyboard.KeyCode) -> None:
-        if key == self.record_hotkey:
-            self.logger.debug("Hotkey press: F8 (record)")
-            self.start_recording()
-        elif key == self.screenshot_hotkey:
-            self.logger.debug("Hotkey press: F9 (screenshot)")
-            self._take_screenshot_safe()
-        elif key == self.batch_hotkey:
-            self.logger.info("Hotkey press: F2 (session → pipeline)")
-            self._request_batch_analyze()
+        try:
+            if key == self.record_hotkey:
+                self.logger.info(
+                    "Hotkey press: %s (record) — starting capture",
+                    _hotkey_label(self.config.session_hotkey_record),
+                )
+                self.start_recording()
+            elif key == self.screenshot_hotkey:
+                self.logger.debug("Hotkey press: %s (screenshot)", _hotkey_label(self.config.session_hotkey_screenshot))
+                self._take_screenshot_safe()
+            elif key == self.batch_hotkey:
+                self.logger.info(
+                    "Hotkey press: %s (session → pipeline)",
+                    _hotkey_label(self.config.session_hotkey_submit),
+                )
+                self._request_batch_analyze()
+        except Exception:
+            self.logger.exception("Error in on_press (key=%r)", key)
 
     def on_release(self, key: keyboard.Key | keyboard.KeyCode) -> None:
-        if key == self.record_hotkey:
-            self.logger.debug("Hotkey release: F8 (stop record)")
-            self.stop_recording()
+        try:
+            if key == self.record_hotkey:
+                self.logger.info(
+                    "Hotkey release: %s (stop record)",
+                    _hotkey_label(self.config.session_hotkey_record),
+                )
+                self.stop_recording()
+        except Exception:
+            self.logger.exception("Error in on_release (key=%r)", key)
 
     def run(self) -> None:
         self.logger.info("Screen tool hotkey listener started")
         self.logger.info(
-            "F8 hold=record audio, F9=screenshot, F2=send session (screenshots+audio) to pipeline/Telegram"
+            "%s hold=record audio, %s=screenshot, %s=send session to pipeline/Telegram",
+            _hotkey_label(self.config.session_hotkey_record),
+            _hotkey_label(self.config.session_hotkey_screenshot),
+            _hotkey_label(self.config.session_hotkey_submit),
         )
 
         with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:

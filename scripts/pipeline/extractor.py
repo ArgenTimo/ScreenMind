@@ -104,7 +104,12 @@ Rules:
             + "\n\n---\n\n"
         )
     if len(paths) > 1:
-        extra += "Multiple screenshots are provided in chronological order; merge information across them as needed.\n\n---\n\n"
+        order_lines = "\n".join(f"  {i + 1}. {os.path.basename(p)}" for i, p in enumerate(paths))
+        extra += (
+            "Multiple screenshots are provided in filename order (typically chronological). "
+            "Merge information across all of them.\n"
+            f"Files:\n{order_lines}\n\n---\n\n"
+        )
 
     prompt = extra + prompt_body
 

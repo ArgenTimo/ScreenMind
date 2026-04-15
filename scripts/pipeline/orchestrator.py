@@ -30,6 +30,11 @@ def run_pipeline_session(image_paths: list[str], audio_paths: list[str]) -> tupl
     logger.info("Pipeline started for images=%s audio=%s", image_paths, audio_paths)
 
     transcript = transcribe_wav_files(audio_paths)
+    logger.info(
+        "Transcription merged length=%s chars; calling extractor once with %s image(s) in one request",
+        len(transcript),
+        len(image_paths),
+    )
     extract_result = run_extractor(image_paths, supplemental_context=transcript)
     classify_result = classify_task(extract_result)
 
