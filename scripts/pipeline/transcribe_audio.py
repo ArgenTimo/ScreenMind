@@ -23,7 +23,7 @@ def transcribe_wav_files(wav_paths: list[str]) -> str:
     for path in sorted(wav_paths):
         logger.info("Transcribing: %s", path)
         with open(path, "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
+            transcript = client.audio.transcriptions.create(model=config.openai_transcription_model, file=audio_file)
         parts.append(f"[{os.path.basename(path)}]\n{transcript.text.strip()}")
 
     return "\n\n".join(parts)

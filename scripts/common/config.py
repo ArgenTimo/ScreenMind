@@ -12,16 +12,28 @@ class AppConfig:
     default_prompt_path: str
     openai_api_key: str
     openai_model: str
+    openai_transcription_model: str
     log_level: str
     telegram_bot_token: str
     telegram_chat_id: str
     telegram_send_image: bool
     output_language: str
     debug_telegram: bool
+    session_hotkey_record: str
+    session_hotkey_screenshot: str
+    session_hotkey_submit: str
 
 
 def _to_bool(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _session_hotkey_env(var: str, default: str) -> str:
+    """Return env value or default if missing/blank. Ignores legacy AUDIO_OUTPUT_HOTKEY (was confusing f1 vs f8)."""
+    raw = os.getenv(var)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower()
 
 
 def _read_env_key_from_file(env_path: str, key: str) -> str | None:
@@ -65,10 +77,14 @@ def load_config() -> AppConfig:
         default_prompt_path=os.getenv("DEFAULT_PROMPT_PATH", "prompts/default_prompt.txt"),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip(),
+        openai_transcription_model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1").strip(),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip(),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         telegram_send_image=_to_bool((os.getenv("TELEGRAM_SEND_IMAGE") or "true").strip()),
         output_language=os.getenv("OUTPUT_LANGUAGE", "en").strip(),
         debug_telegram=_to_bool((os.getenv("DEBUG_TELEGRAM") or "false").strip()),
+        session_hotkey_record=_session_hotkey_env("SESSION_HOTKEY_RECORD", "f8"),
+        session_hotkey_screenshot=_session_hotkey_env("SESSION_HOTKEY_SCREENSHOT", "f9"),
+        session_hotkey_submit=_session_hotkey_env("SESSION_HOTKEY_SUBMIT", "f2"),
     )
