@@ -1,6 +1,7 @@
 import os
+import re
 from dataclasses import dataclass
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 
 @dataclass
@@ -16,16 +17,46 @@ class AppConfig:
     telegram_chat_id: str
     telegram_send_image: bool
     output_language: str
+    debug_telegram: bool
 
 
 def _to_bool(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_env_key_from_file(env_path: str, key: str) -> str | None:
+    """Parse KEY=value from .env without relying solely on python-dotenv (handles odd lines, BOM)."""
+    if not os.path.isfile(env_path):
+        return None
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*(.*?)\s*(?:#.*)?\s*$")
+    with open(env_path, encoding="utf-8-sig") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = pattern.match(line)
+            if match:
+                val = match.group(1).strip()
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]
+                elif val.startswith("'") and val.endswith("'"):
+                    val = val[1:-1]
+                return val
+    return None
+
+
 def load_config() -> AppConfig:
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     env_path = os.path.join(project_root, ".env")
-    load_dotenv(env_path)
+    # .env must override pre-existing environment variables so edits apply reliably.
+    load_dotenv(env_path, override=True)
+
+    file_vals = dotenv_values(env_path, encoding="utf-8-sig") if os.path.isfile(env_path) else {}
+    debug_raw = (file_vals or {}).get("DEBUG_TELEGRAM")
+    if debug_raw is None or str(debug_raw).strip() == "":
+        debug_raw = _read_env_key_from_file(env_path, "DEBUG_TELEGRAM")
+    if debug_raw is not None:
+        os.environ["DEBUG_TELEGRAM"] = str(debug_raw).strip()
 
     return AppConfig(
         project_dir=project_root,
@@ -37,6 +68,7 @@ def load_config() -> AppConfig:
         log_level=os.getenv("LOG_LEVEL", "INFO").strip(),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
-        telegram_send_image=_to_bool(os.getenv("TELEGRAM_SEND_IMAGE", "true")),
+        telegram_send_image=_to_bool((os.getenv("TELEGRAM_SEND_IMAGE") or "true").strip()),
         output_language=os.getenv("OUTPUT_LANGUAGE", "en").strip(),
+        debug_telegram=_to_bool((os.getenv("DEBUG_TELEGRAM") or "false").strip()),
     )

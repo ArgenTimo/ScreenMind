@@ -167,6 +167,12 @@ def send_message(text: str) -> None:
     logger.info("Sending Telegram message in %s chunk(s)", len(chunks))
 
     for index, chunk in enumerate(chunks, start=1):
+        logger.info(
+            "Telegram sendMessage chunk %s/%s length=%s",
+            index,
+            len(chunks),
+            len(chunk),
+        )
         response = requests.post(
             url,
             data={

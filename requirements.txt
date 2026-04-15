@@ -1,4 +1,6 @@
 mss
 openai
+pydantic
 python-dotenv
 requests
+pynput
